@@ -89,18 +89,6 @@ gboolean bimp_list_contains_savingplugin()
     return found;
 }
 
-/* get a subset of the manipulation list composed by the selected saving plugins (for example file-dds-save) 
-gboolean bimp_list_get_savingprocedures() 
-{
-    GSList *sublist;
-    GSList *iterator = NULL;
-    manipulation_type elem_type;
-    
-    // TODO
-
-    return sublist;
-}*/
-
 /* get the first occurrence of manipulation of type 'search' from the selected ones */
 manipulation bimp_list_get_manip(manipulation_type search) 
 {
@@ -146,9 +134,7 @@ manipulation manipulation_resize_new()
     ((resize_settings)resize->settings)->resize_mode_width = RESIZE_PERCENT;
     ((resize_settings)resize->settings)->resize_mode_height = RESIZE_PERCENT;
     ((resize_settings)resize->settings)->stretch_mode = STRETCH_ALLOW;
-    gdk_color_parse("black", &(((resize_settings)resize->settings)->padding_color));
-    gdk_colormap_alloc_color(gdk_colormap_get_system(), &(((resize_settings)resize->settings)->padding_color), TRUE, TRUE);
-    ((resize_settings)resize->settings)->padding_color_alpha = G_MAXUINT16;
+    ((resize_settings)resize->settings)->padding_color = (GdkRGBA){ 0.0, 0.0, 0.0, 1.0 };
     ((resize_settings)resize->settings)->interpolation = GIMP_INTERPOLATION_CUBIC;
     ((resize_settings)resize->settings)->change_res = FALSE;
     ((resize_settings)resize->settings)->new_res_x = 72.000;
@@ -228,8 +214,7 @@ manipulation manipulation_watermark_new()
     ((watermark_settings)watermark->settings)->mode = TRUE;
     ((watermark_settings)watermark->settings)->text = "";
     ((watermark_settings)watermark->settings)->font = pango_font_description_copy(pango_font_description_from_string("Sans 16px"));
-    gdk_color_parse("black", &(((watermark_settings)watermark->settings)->color));
-    gdk_colormap_alloc_color(gdk_colormap_get_system(), &(((watermark_settings)watermark->settings)->color), TRUE, TRUE);
+    ((watermark_settings)watermark->settings)->color = (GdkRGBA){ 0.0, 0.0, 0.0, 1.0 };
     ((watermark_settings)watermark->settings)->image_file = NULL;
     ((watermark_settings)watermark->settings)->image_sizemode = WM_IMG_NOSIZE;
     ((watermark_settings)watermark->settings)->image_size_percent = 25.0;
@@ -282,7 +267,6 @@ manipulation manipulation_userdef_new()
     userdef->icon = "/gimp/plugin/bimp/icons/stock-userdef.png";
     userdef->settings = (userdef_settings) g_malloc(sizeof(struct manip_userdef_set));
     ((userdef_settings)userdef->settings)->procedure = NULL;
-    ((userdef_settings)userdef->settings)->num_params = 0;
     ((userdef_settings)userdef->settings)->params = NULL;
     
     return userdef;
