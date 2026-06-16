@@ -3,6 +3,7 @@
 
 #include <gtk/gtk.h>
 #include <glib.h>
+#include <libgimp/gimp.h>
 
 #define PLUG_IN_FULLNAME "Batch Image Manipulation Plugin"
 #define PLUG_IN_DESCRIPTION "Applies GIMP manipulations on groups of images"
@@ -31,7 +32,8 @@ extern gboolean bimp_opt_keepdates;
 extern gboolean bimp_is_busy;
 
 extern GSList* bimp_supported_procedures;
-void init_supported_procedures(void);
+void     init_supported_procedures(void);
+gboolean pdb_proc_has_compatible_params(GimpPDB*, const gchar*);
 
 #endif
 

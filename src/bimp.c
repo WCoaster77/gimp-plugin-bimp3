@@ -1,26 +1,24 @@
 /*
  * BIMP - Batch Image Manipulation Plugin for GIMP
- * 
+ *
  * (C) 2018 - Alessandro Francesconi
  * http://www.alessandrofrancesconi.it/projects/bimp
- *  
+ *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
  * the Free Software Foundation; either version 2 of the License, or
  * (at your option) any later version.
- * 
+ *
  * This program is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
  * GNU General Public License for more details.
- * 
+ *
  * You should have received a copy of the GNU General Public License
  * along with this program; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston,
  * MA 02110-1301, USA.
- * 
  */
-
 
 #include <libgimp/gimp.h>
 #include <gtk/gtk.h>
@@ -32,90 +30,127 @@
 #include "bimp-utils.h"
 #include "plugin-intl.h"
 
-GSList* bimp_input_filenames;
-char* bimp_output_folder;
+/* ---------- global state -------------------------------------------------- */
 
-gint bimp_opt_alertoverwrite;
-gboolean bimp_opt_keepfolderhierarchy;
-gboolean bimp_opt_deleteondone;
-gboolean bimp_opt_keepdates;
+GSList  *bimp_input_filenames      = NULL;
+char    *bimp_output_folder        = NULL;
 
-gboolean bimp_is_busy;
+gint     bimp_opt_alertoverwrite   = BIMP_ASK_OVERWRITE;
+gboolean bimp_opt_keepfolderhierarchy = FALSE;
+gboolean bimp_opt_deleteondone     = FALSE;
+gboolean bimp_opt_keepdates        = FALSE;
 
-GSList* bimp_supported_procedures;
+gboolean bimp_is_busy              = FALSE;
 
-static void query (void);
-static gboolean pdb_proc_has_compatible_params (gchar*);
+GSList  *bimp_supported_procedures = NULL;
 
-static void run (
-    const gchar *name,
-    gint nparams,
-    const GimpParam *param,
-    gint *nreturn_vals,
-    GimpParam **return_vals
-    );
+/* ---------- GObject plugin class ------------------------------------------ */
 
-static const GimpPlugInInfo PLUG_IN_INFO = {
-    NULL,  /* init_proc  */
-    NULL,  /* quit_proc  */
-    query, /* query_proc */
-    run,   /* run_proc   */
+#define BIMP_TYPE_PLUGIN (bimp_plugin_get_type())
+G_DECLARE_FINAL_TYPE (BimpPlugin, bimp_plugin, BIMP, PLUGIN, GimpPlugIn)
+
+struct _BimpPlugin
+{
+    GimpPlugIn parent_instance;
 };
 
-MAIN ()
+static GList         *bimp_query_procedures  (GimpPlugIn     *plug_in);
+static GimpProcedure *bimp_create_procedure  (GimpPlugIn     *plug_in,
+                                              const gchar    *name);
+static GimpValueArray *bimp_run              (GimpProcedure        *procedure,
+                                              GimpRunMode           run_mode,
+                                              GimpImage            *image,
+                                              gint                  n_drawables,
+                                              GimpDrawable        **drawables,
+                                              GimpProcedureConfig  *config,
+                                              gpointer              run_data);
 
-static void query (void)
+G_DEFINE_TYPE (BimpPlugin, bimp_plugin, GIMP_TYPE_PLUG_IN)
+
+GIMP_MAIN (BIMP_TYPE_PLUGIN)
+
+static void
+bimp_plugin_class_init (BimpPluginClass *klass)
 {
-    static GimpParamDef args[] = {
-        { GIMP_PDB_INT32, "run-mode", "Run mode" }
-    };
-    
-    gimp_plugin_domain_register (GETTEXT_PACKAGE, get_bimp_localedir());
-
-    gimp_install_procedure (
-        PLUG_IN_PROC,
-        PLUG_IN_FULLNAME,
-        _("Applies GIMP manipulations on groups of images"),
-        "Alessandro Francesconi <alessandrofrancesconi@live.it>",
-        "Copyright (C) Alessandro Francesconi\n"
-        "http://www.alessandrofrancesconi.it/projects/bimp",
-        "2018",
-        "Batch Image Manipulation...",
-        "",
-        GIMP_PLUGIN,
-        G_N_ELEMENTS (args),
-        0,
-        args, 
-        0
-    );
-
-    gimp_plugin_menu_register (PLUG_IN_PROC, "<Image>/File/Open"); 
+    GimpPlugInClass *plug_in_class = GIMP_PLUG_IN_CLASS (klass);
+    plug_in_class->query_procedures = bimp_query_procedures;
+    plug_in_class->create_procedure = bimp_create_procedure;
 }
 
-static void run (
-    const gchar *name,
-    gint nparams,
-    const GimpParam *param,
-    gint *nreturn_vals,
-    GimpParam **return_vals)
+static void
+bimp_plugin_init (BimpPlugin *plugin)
 {
-    static GimpParam  values[1];
-    GimpPDBStatusType status = GIMP_PDB_SUCCESS;
-    GimpRunMode run_mode;
-    
-    *nreturn_vals = 1;
-    *return_vals  = values;
+    (void)plugin;
+}
+
+static GList *
+bimp_query_procedures (GimpPlugIn *plug_in)
+{
+    (void)plug_in;
+    gimp_domain_register (GETTEXT_PACKAGE, get_bimp_localedir());
+    return g_list_append (NULL, g_strdup (PLUG_IN_PROC));
+}
+
+static GimpProcedure *
+bimp_create_procedure (GimpPlugIn  *plug_in,
+                       const gchar *name)
+{
+    GimpProcedure *procedure = NULL;
+
+    if (g_strcmp0 (name, PLUG_IN_PROC) == 0)
+    {
+        procedure = gimp_image_procedure_new (
+            plug_in, name,
+            GIMP_PDB_PROC_TYPE_PLUGIN,
+            bimp_run, NULL, NULL
+        );
+
+        gimp_procedure_set_image_types (procedure, "*");
+        gimp_procedure_set_sensitivity_mask (procedure,
+            GIMP_PROCEDURE_SENSITIVE_ALWAYS);
+
+        gimp_procedure_set_menu_label (procedure,
+            _("Batch Image Manipulation..."));
+        gimp_procedure_add_menu_path (procedure, "<Image>/File/Open");
+
+        gimp_procedure_set_documentation (
+            procedure,
+            PLUG_IN_FULLNAME,
+            PLUG_IN_DESCRIPTION,
+            name
+        );
+        gimp_procedure_set_attribution (
+            procedure,
+            "Alessandro Francesconi <alessandrofrancesconi@live.it>",
+            PLUG_IN_COPYRIGHT,
+            "2018"
+        );
+    }
+
+    return procedure;
+}
+
+static GimpValueArray *
+bimp_run (GimpProcedure        *procedure,
+          GimpRunMode           run_mode,
+          GimpImage            *image,
+          gint                  n_drawables,
+          GimpDrawable        **drawables,
+          GimpProcedureConfig  *config,
+          gpointer              run_data)
+{
+    (void)image;
+    (void)n_drawables;
+    (void)drawables;
+    (void)config;
+    (void)run_data;
 
     bindtextdomain (GETTEXT_PACKAGE, get_bimp_localedir());
     bind_textdomain_codeset (GETTEXT_PACKAGE, "UTF-8");
     textdomain (GETTEXT_PACKAGE);
-  
-    values[0].type = GIMP_PDB_STATUS;
-    values[0].data.d_status = status;
-    
-    run_mode = param[0].data.d_int32;
-    
-    switch (run_mode) {
+
+    switch (run_mode)
+    {
         case GIMP_RUN_INTERACTIVE:
         case GIMP_RUN_WITH_LAST_VALS:
             bimp_show_gui();
@@ -123,24 +158,27 @@ static void run (
 
         case GIMP_RUN_NONINTERACTIVE:
         default:
-            g_error("Bimp can't run in non-interactive mode. At least for now...");
-            values[0].data.d_status = GIMP_PDB_CALLING_ERROR;
-            break;
+            g_message ("BIMP cannot run in non-interactive mode.");
+            return gimp_procedure_new_return_values (
+                procedure, GIMP_PDB_CALLING_ERROR, NULL);
     }
+
+    return gimp_procedure_new_return_values (procedure, GIMP_PDB_SUCCESS, NULL);
 }
 
-/*
- * Used by userdef gui, filters the full list of GIMP procedures:
- *  - by ignoring system's procedures 
- *  - by ignoring procedures that contains non-compatible datatypes (like FLOATARRAY, PATH, ...). */
-void init_supported_procedures()
+/* ---------- PDB procedure list helpers ------------------------------------ */
+
+void
+init_supported_procedures (void)
 {
     if (bimp_supported_procedures != NULL) return;
-    
-    gint proc_count;
-    gchar** results;
-    
-    gimp_procedural_db_query (
+
+    GimpPDB  *pdb        = gimp_get_pdb ();
+    gchar   **proc_names = NULL;
+    gint      proc_count = 0;
+
+    proc_names = gimp_pdb_query_procedures (
+        pdb,
         "^(?!.*(?:"
             "plug-in-bimp|"
             "extension-|"
@@ -151,7 +189,7 @@ void init_supported_procedures()
             "file-glob|"
             "twain-acquire|"
             "-load|"
-            "-save|" // TODO: remove it for next feature "enable saving plugins"
+            "-save|"
             "-select|"
             "-free|"
             "-help|"
@@ -171,7 +209,7 @@ void init_supported_procedures()
             "gimp-display|"
             "gimp-fonts|"
             "gimp-gimprc|"
-			"gimp-gradient|"
+            "gimp-gradient|"
             "gimp-online|"
             "gimp-palette|"
             "gimp-path|"
@@ -183,78 +221,57 @@ void init_supported_procedures()
             "gimp-vectors|"
             "temp-procedure"
         ")).*",
-        ".*",
-        ".*",
-        ".*",
-        ".*",
-        ".*",
-        ".*",
-        &proc_count,
-        &results
+        ".*", ".*", ".*", ".*", ".*", ".*",
+        &proc_count
     );
-    
-    int i;
-    for (i = 0; i < proc_count; i++) {
-        /* check each parameter for compatibility and sort it alphabetically */
-        if (pdb_proc_has_compatible_params(results[i])) {
-            bimp_supported_procedures = g_slist_insert_sorted(bimp_supported_procedures, results[i], glib_strcmpi);
+
+    for (gint i = 0; i < proc_count; i++)
+    {
+        if (pdb_proc_has_compatible_params (pdb, proc_names[i]))
+        {
+            bimp_supported_procedures = g_slist_insert_sorted (
+                bimp_supported_procedures,
+                g_strdup (proc_names[i]),
+                glib_strcmpi
+            );
         }
     }
-    
-    free (results);
+
+    g_strfreev (proc_names);
 }
 
-static gboolean pdb_proc_has_compatible_params(gchar* proc_name) 
+gboolean
+pdb_proc_has_compatible_params (GimpPDB *pdb, const gchar *proc_name)
 {
-    gchar* proc_blurb;
-    gchar* proc_help;
-    gchar* proc_author;
-    gchar* proc_copyright;
-    gchar* proc_date;
-    GimpPDBProcType proc_type;
-    gint num_params;
-    gint num_values;
-    GimpParamDef *params;
-    GimpParamDef *return_vals;
-    
-    gimp_procedural_db_proc_info (
-        proc_name,
-        &proc_blurb,
-        &proc_help,
-        &proc_author,
-        &proc_copyright,
-        &proc_date,
-        &proc_type,
-        &num_params,
-        &num_values,
-        &params,
-        &return_vals
-    );
-    
-    int i;
-    GimpParamDef param;
-    gboolean compatible = TRUE;
-    for (i = 0; (i < num_params) && compatible; i++) {
-        param = pdb_proc_get_param_info(proc_name, i);
-        
-        if (
-            param.type == GIMP_PDB_INT32 ||
-            param.type == GIMP_PDB_INT16 ||
-            param.type == GIMP_PDB_INT8 ||
-            param.type == GIMP_PDB_FLOAT ||
-            //(param.type == GIMP_PDB_STRING && strstr(param.name, "filename") == NULL) ||
-            param.type == GIMP_PDB_STRING ||
-            param.type == GIMP_PDB_COLOR ||
-            param.type == GIMP_PDB_DRAWABLE ||
-            param.type == GIMP_PDB_ITEM ||
-            param.type == GIMP_PDB_IMAGE
-            ) {
-            compatible = TRUE;
-        } else {
-            compatible = FALSE;
+    GimpProcedure *procedure = gimp_pdb_lookup_procedure (pdb, proc_name);
+    if (!procedure) return FALSE;
+
+    gint        n_args = 0;
+    GParamSpec **args  = gimp_procedure_get_arguments (procedure, &n_args);
+
+    if (n_args == 0) return FALSE;
+
+    for (gint i = 0; i < n_args; i++)
+    {
+        GType type = G_PARAM_SPEC_VALUE_TYPE (args[i]);
+
+        if (type == G_TYPE_INT      ||
+            type == G_TYPE_UINT     ||
+            type == G_TYPE_DOUBLE   ||
+            type == G_TYPE_FLOAT    ||
+            type == G_TYPE_STRING   ||
+            type == GIMP_TYPE_IMAGE ||
+            type == GIMP_TYPE_DRAWABLE ||
+            type == GIMP_TYPE_ITEM  ||
+            type == GEGL_TYPE_COLOR)
+        {
+            continue;
+        }
+        else
+        {
+            return FALSE;
         }
     }
-    
-    return (compatible && num_params > 0);
-}
 
+    return TRUE;
+}
