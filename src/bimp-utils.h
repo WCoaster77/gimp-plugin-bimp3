@@ -10,17 +10,17 @@ char* comp_get_filename(char*);
 char* comp_get_filefolder(char*);
 gboolean str_contains_cins(char*, char*);
 gboolean file_has_extension(char*, char*);
-GimpParamDef pdb_proc_get_param_info(gchar*, gint);
-char* get_user_dir(void); 
+GParamSpec* pdb_proc_get_param_info(GimpPDB*, const gchar*, gint);
+char* get_user_dir(void);
 char* get_bimp_localedir(void);
 int glib_strcmpi(gconstpointer, gconstpointer);
-gchar** get_path_folders (char*);
+gchar** get_path_folders(char*);
 char* get_datetime(void);
 time_t get_modification_time(char*);
 int set_modification_time(char*, time_t);
 GdkPixbuf* pixbuf_new_from_resource(const char*);
 GtkWidget* image_new_from_resource(const char*);
-GtkWidget* image_new_from_resource_scaled(const char*, GdkWindow*);
+GtkWidget* image_new_from_resource_scaled(const char*, GdkSurface*);
 
 #if defined _WIN32
 #define FILE_SEPARATOR '\\'

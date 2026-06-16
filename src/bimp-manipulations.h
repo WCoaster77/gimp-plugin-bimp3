@@ -2,7 +2,6 @@
 #define __BIMP_MANIPULATIONS_H__
 
 #include <gtk/gtk.h>
-#include <gdk-pixbuf/gdk-pixdata.h>
 #include <libgimp/gimp.h>
 
 #define RENAME_KEY_ORIG "$$"
@@ -140,8 +139,7 @@ typedef struct manip_resize_set {
     resize_mode resize_mode_width;
     resize_mode resize_mode_height;
     stretch_mode stretch_mode;
-    GdkColor padding_color;
-    guint16 padding_color_alpha;
+    GdkRGBA padding_color;
     GimpInterpolationType interpolation;
     gboolean change_res;
     gdouble new_res_x;
@@ -181,7 +179,7 @@ typedef struct manip_watermark_set {
     gboolean mode; /* TRUE = text mode; FALSE = image mode */
     gchar* text;
     PangoFontDescription* font;
-    GdkColor color;
+    GdkRGBA color;
     char* image_file;
     watermark_image_sizemode image_sizemode;
     float image_size_percent;
@@ -264,8 +262,7 @@ typedef struct manip_rename_set {
 
 typedef struct manip_userdef_set {
     gchar* procedure;
-    gint num_params;
-    GimpParam* params; /* array of procedure params (GimpParamDef structs) */
+    GimpValueArray* params;
 } *userdef_settings;
 
 manipulation bimp_append_manipulation(manipulation_type);
