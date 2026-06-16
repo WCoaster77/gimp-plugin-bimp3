@@ -7,9 +7,24 @@
 #include <glib/gstdio.h>
 #include <gtk/gtk.h>
 #include <libgimp/gimp.h>
+#include <gegl.h>
 #include <string.h>
 #include <stdlib.h>
 #include <locale.h>
+
+static void parse_color_compat(const gchar *str, GdkRGBA *out)
+{
+    if (gdk_rgba_parse(out, str)) return;
+    guint16 r, g, b;
+    if (sscanf(str, "#%4hx%4hx%4hx", &r, &g, &b) == 3) {
+        out->red   = r / 65535.0;
+        out->green = g / 65535.0;
+        out->blue  = b / 65535.0;
+        out->alpha = 1.0;
+    } else {
+        *out = (GdkRGBA){0, 0, 0, 1};
+    }
+}
 #include "bimp.h"
 #include "bimp-manipulations.h"
 #include "bimp-utils.h"
@@ -208,8 +223,7 @@ static void write_resize(resize_settings settings, GKeyFile* file)
     g_key_file_set_integer(file, group_name, "resize_mode_width", settings->resize_mode_width);
     g_key_file_set_integer(file, group_name, "resize_mode_height", settings->resize_mode_height);
     g_key_file_set_integer(file, group_name, "stretch_mode", settings->stretch_mode);
-    g_key_file_set_string(file, group_name, "padding_color", gdk_color_to_string(&(settings->padding_color)));
-    g_key_file_set_integer(file, group_name, "padding_color_alpha", settings->padding_color_alpha);
+    g_key_file_set_string(file, group_name, "padding_color", gdk_rgba_to_string(&(settings->padding_color)));
     g_key_file_set_integer(file, group_name, "interpolation", settings->interpolation);
     g_key_file_set_boolean(file, group_name, "change_res", settings->change_res);
     g_key_file_set_integer(file, group_name, "new_res_x", settings->new_res_x);
@@ -270,11 +284,14 @@ static manipulation read_resize(GKeyFile* file)
         if (g_key_file_has_key(file, group_name, "stretch_mode", NULL)) 
             settings->stretch_mode = g_key_file_get_integer(file, group_name, "stretch_mode", NULL);
         
-        if (g_key_file_has_key(file, group_name, "padding_color", NULL)) 
-            gdk_color_parse(g_key_file_get_string(file, group_name, "padding_color", NULL), &(settings->padding_color));
-        
-        if (g_key_file_has_key(file, group_name, "padding_color_alpha", NULL)) 
-            settings->padding_color_alpha = (guint16)g_key_file_get_integer(file, group_name, "padding_color_alpha", NULL);
+        if (g_key_file_has_key(file, group_name, "padding_color", NULL))
+            parse_color_compat(g_key_file_get_string(file, group_name, "padding_color", NULL),
+                               &(settings->padding_color));
+
+        if (g_key_file_has_key(file, group_name, "padding_color_alpha", NULL)) {
+            guint16 alpha16 = (guint16)g_key_file_get_integer(file, group_name, "padding_color_alpha", NULL);
+            settings->padding_color.alpha = alpha16 / 65535.0;
+        }
         
         if (g_key_file_has_key(file, group_name, "interpolation", NULL)) 
             settings->interpolation = g_key_file_get_integer(file, group_name, "interpolation", NULL);
@@ -610,7 +627,7 @@ static void write_watermark(watermark_settings settings, GKeyFile* file, int id)
     g_key_file_set_boolean(file, group_name, "mode", settings->mode);
     g_key_file_set_string(file, group_name, "text", settings->text);
     g_key_file_set_string(file, group_name, "font", pango_font_description_to_string(settings->font));
-    g_key_file_set_string(file, group_name, "color", gdk_color_to_string(&(settings->color)));
+    g_key_file_set_string(file, group_name, "color", gdk_rgba_to_string(&(settings->color)));
     if (settings->image_file != NULL) g_key_file_set_string(file, group_name, "image_file", settings->image_file);
     g_key_file_set_integer(file, group_name, "image_sizemode", settings->image_sizemode);
     g_key_file_set_double(file, group_name, "image_size_percent", settings->image_size_percent);
@@ -639,8 +656,9 @@ static manipulation read_watermark(GKeyFile* file, int id)
         if (g_key_file_has_key(file, group_name, "font", NULL)) 
             settings->font = pango_font_description_from_string(g_key_file_get_string(file, group_name, "font", NULL));
             
-        if (g_key_file_has_key(file, group_name, "color", NULL)) 
-            gdk_color_parse(g_key_file_get_string(file, group_name, "color", NULL), &(settings->color));
+        if (g_key_file_has_key(file, group_name, "color", NULL))
+            parse_color_compat(g_key_file_get_string(file, group_name, "color", NULL),
+                               &(settings->color));
             
         if (g_key_file_has_key(file, group_name, "image_file", NULL)) 
             settings->image_file = g_key_file_get_string(file, group_name, "image_file", NULL);
@@ -925,107 +943,107 @@ static manipulation read_rename(GKeyFile* file)
     return man;
 }
 
-static void write_userdef(userdef_settings settings, GKeyFile* file, int id) 
+static void write_userdef(userdef_settings settings, GKeyFile *file, int id)
 {
-    gchar* group_name = g_strdup_printf("USERDEF%d", id);
-    
+    gchar *group_name = g_strdup_printf("USERDEF%d", id);
+
     g_key_file_set_string(file, group_name, "procedure", settings->procedure);
-    g_key_file_set_integer(file, group_name, "num_params", settings->num_params);
-    
-    if (settings->num_params > 0) {        
-        int param_i;
-        GdkColor tempcolor;
-        for (param_i = 0; param_i < settings->num_params; param_i++) {
-            
-            gchar* param_i_str = g_strdup_printf("PARAM%d", param_i);
-            switch(settings->params[param_i].type) {
-                case GIMP_PDB_INT32:
-                    g_key_file_set_integer(file, group_name, param_i_str, settings->params[param_i].data.d_int32);
-                    break;
-                case GIMP_PDB_INT16:
-                    g_key_file_set_integer(file, group_name, param_i_str, settings->params[param_i].data.d_int16);
-                    break;
-                case GIMP_PDB_INT8:
-                    g_key_file_set_integer(file, group_name, param_i_str, settings->params[param_i].data.d_int8);
-                    break;
-                case GIMP_PDB_FLOAT: 
-                    g_key_file_set_double(file, group_name, param_i_str, settings->params[param_i].data.d_float);
-                    break;
-                case GIMP_PDB_STRING: 
-                    g_key_file_set_string(file, group_name, param_i_str, settings->params[param_i].data.d_string);
-                    break;
-                case GIMP_PDB_COLOR:
-                    tempcolor.red = (guint16)(((settings->params[param_i]).data.d_color.r)*65535);
-                    tempcolor.green = (guint16)(((settings->params[param_i]).data.d_color.g)*65535);
-                    tempcolor.blue = (guint16)(((settings->params[param_i]).data.d_color.b)*65535);
-                    
-                    g_key_file_set_string(file, group_name, param_i_str, gdk_color_to_string(&(tempcolor)));
-                    break;
-                
-                default: 
-                    g_key_file_set_string(file, group_name, param_i_str, "NOT_USED");
-                break;
+
+    gint nparams = settings->params ? gimp_value_array_length(settings->params) : 0;
+    g_key_file_set_integer(file, group_name, "num_params", nparams);
+
+    for (int i = 0; i < nparams; i++) {
+        GValue *val  = gimp_value_array_index(settings->params, i);
+        GType   type = G_VALUE_TYPE(val);
+        gchar  *key  = g_strdup_printf("PARAM%d", i);
+
+        if (type == G_TYPE_BOOLEAN) {
+            g_key_file_set_boolean(file, group_name, key, g_value_get_boolean(val));
+        } else if (type == G_TYPE_INT) {
+            g_key_file_set_integer(file, group_name, key, g_value_get_int(val));
+        } else if (type == G_TYPE_UINT) {
+            g_key_file_set_integer(file, group_name, key, (gint)g_value_get_uint(val));
+        } else if (type == G_TYPE_DOUBLE) {
+            g_key_file_set_double(file, group_name, key, g_value_get_double(val));
+        } else if (type == G_TYPE_STRING) {
+            const char *s = g_value_get_string(val);
+            if (s) g_key_file_set_string(file, group_name, key, s);
+        } else if (type == GEGL_TYPE_COLOR || g_type_is_a(type, GEGL_TYPE_COLOR)) {
+            GeglColor *gc = GEGL_COLOR(g_value_get_object(val));
+            if (gc) {
+                GdkRGBA rgba;
+                gegl_color_get_rgba(gc, &rgba.red, &rgba.green, &rgba.blue, &rgba.alpha);
+                g_key_file_set_string(file, group_name, key, gdk_rgba_to_string(&rgba));
             }
+        } else {
+            g_key_file_set_string(file, group_name, key, "NOT_USED");
         }
+        g_free(key);
     }
 }
 
-static manipulation read_userdef(GKeyFile* file, int id) 
+static manipulation read_userdef(GKeyFile *file, int id)
 {
-    gchar* group_name = g_strdup_printf("USERDEF%d", id);
-    manipulation man = NULL;
-    
-    if (g_key_file_has_group(file, group_name)) {
-        man = manipulation_userdef_new();
-        userdef_settings settings = ((userdef_settings)man->settings);
-        
-        if (g_key_file_has_key(file, group_name, "procedure", NULL) && g_key_file_has_key(file, group_name, "num_params", NULL)) {
-            settings->procedure = g_key_file_get_string(file, group_name, "procedure", NULL);
-            settings->num_params = g_key_file_get_integer(file, group_name, "num_params", NULL);
-            
-            settings->params = g_new(GimpParam, settings->num_params);
-            
-            int param_i;
-            GimpParamDef param_info;
-            GdkColor usercolor;
-            GimpRGB rgbdata;
-            for (param_i = 0; param_i < settings->num_params; param_i++) {
-                param_info = pdb_proc_get_param_info(settings->procedure, param_i);
-                
-                settings->params[param_i].type = param_info.type;
-                gchar* param_i_str = g_strdup_printf("PARAM%d", param_i);
-                switch(settings->params[param_i].type) {
-                    case GIMP_PDB_INT32:
-                        (settings->params[param_i]).data.d_int32 = (gint32)g_key_file_get_integer(file, group_name, param_i_str, NULL);
-                        break;
-                        
-                    case GIMP_PDB_INT16:
-                        (settings->params[param_i]).data.d_int16 = (gint16)g_key_file_get_integer(file, group_name, param_i_str, NULL);
-                        break;
-                        
-                    case GIMP_PDB_INT8:
-                        (settings->params[param_i]).data.d_int8 = (gint8)g_key_file_get_integer(file, group_name, param_i_str, NULL);
-                        break;
-                        
-                    case GIMP_PDB_FLOAT: 
-                        (settings->params[param_i]).data.d_float = (gdouble)g_key_file_get_double(file, group_name, param_i_str, NULL);
-                        break;
-                        
-                    case GIMP_PDB_STRING: 
-                        (settings->params[param_i]).data.d_string = g_key_file_get_string(file, group_name, param_i_str, NULL);
-                        break;
-                    
-                    case GIMP_PDB_COLOR: 
-                        gdk_color_parse (g_key_file_get_string(file, group_name, param_i_str, NULL), &usercolor);
-                        gimp_rgb_set(&rgbdata, (gdouble)usercolor.red/65535, (gdouble)usercolor.green/65535, (gdouble)usercolor.blue/65535);
-                        (settings->params[param_i]).data.d_color = rgbdata;
-                        break;
-                        
-                    default: break;
-                }
+    gchar        *group_name = g_strdup_printf("USERDEF%d", id);
+    manipulation  man = NULL;
+
+    if (!g_key_file_has_group(file, group_name)) return man;
+
+    man = manipulation_userdef_new();
+    userdef_settings settings = (userdef_settings)man->settings;
+
+    if (!g_key_file_has_key(file, group_name, "procedure", NULL)) return man;
+
+    settings->procedure = g_key_file_get_string(file, group_name, "procedure", NULL);
+
+    GimpPDB       *pdb  = gimp_get_pdb();
+    GimpProcedure *proc = gimp_pdb_lookup_procedure(pdb, settings->procedure);
+    if (!proc) return man;
+
+    gint        n_args;
+    GParamSpec **args = gimp_procedure_get_arguments(proc, &n_args);
+
+    settings->params = gimp_value_array_new(n_args);
+
+    for (int i = 0; i < n_args; i++) {
+        GType  type = G_PARAM_SPEC_VALUE_TYPE(args[i]);
+        gchar *key  = g_strdup_printf("PARAM%d", i);
+        GValue val  = G_VALUE_INIT;
+        g_value_init(&val, type);
+
+        if (g_key_file_has_key(file, group_name, key, NULL)) {
+            if (type == G_TYPE_BOOLEAN) {
+                g_value_set_boolean(&val,
+                    g_key_file_get_boolean(file, group_name, key, NULL));
+            } else if (type == G_TYPE_INT) {
+                g_value_set_int(&val,
+                    g_key_file_get_integer(file, group_name, key, NULL));
+            } else if (type == G_TYPE_UINT) {
+                g_value_set_uint(&val,
+                    (guint)g_key_file_get_integer(file, group_name, key, NULL));
+            } else if (type == G_TYPE_DOUBLE) {
+                g_value_set_double(&val,
+                    g_key_file_get_double(file, group_name, key, NULL));
+            } else if (type == G_TYPE_STRING) {
+                g_value_set_string(&val,
+                    g_key_file_get_string(file, group_name, key, NULL));
+            } else if (type == GEGL_TYPE_COLOR || g_type_is_a(type, GEGL_TYPE_COLOR)) {
+                gchar   *color_str = g_key_file_get_string(file, group_name, key, NULL);
+                GdkRGBA  rgba;
+                parse_color_compat(color_str, &rgba);
+                GeglColor *gc = gegl_color_new(NULL);
+                gegl_color_set_rgba(gc, rgba.red, rgba.green, rgba.blue, rgba.alpha);
+                g_value_set_object(&val, gc);
+                g_object_unref(gc);
+                g_free(color_str);
             }
         }
+
+        gimp_value_array_append(settings->params, &val);
+        g_value_unset(&val);
+        g_free(key);
     }
-    
+    g_free(args);
+
     return man;
 }
