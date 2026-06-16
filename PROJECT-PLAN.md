@@ -54,29 +54,48 @@ Users running GIMP 3.x who need batch image processing. The plugin must install 
 
 ## Build Order
 
-Each section is committed before moving to the next.
+Legend: ✅ Done · 🔲 Pending
 
-| # | File(s) | What Changes |
+| # | File(s) | What Changes | Status |
+|---|---|---|---|
+| 1 | `PROJECT-PLAN.md`, `AGENTS.md` | Docs setup | ✅ 71fa293 |
+| 2 | `src/bimp.h` | Remove `GimpParam` reference from `manip_userdef_set` | ✅ fb65687 |
+| 3 | `src/bimp-operate.h` | `gint32` → `GimpImage*`/`GList*` in `image_output` struct | ✅ fb65687 |
+| 4 | `src/bimp-manipulations.h` | `GdkColor` → `GdkRGBA`, `GimpParam*` → `GimpValueArray*` | ✅ fb65687 |
+| 5 | `src/bimp-utils.h` / `bimp-utils.c` | Remove `GimpParamDef`, fix `GdkWindow` reference | ✅ fb65687 |
+| 6 | `src/bimp.c` | Full rewrite: GObject plugin class, new query/run pattern | ✅ fc26a14 |
+| 7 | `src/bimp-operate.c` | ID→object types, `GimpValueArray`, save procedure names, `GFile*` | ✅ aa8897c |
+| 8 | `src/bimp-manipulations.c` | `GdkColor`→`GdkRGBA`, `GimpRGB`→`GeglColor` | ✅ d082217 |
+| 9 | `src/bimp-gui.c` | GTK4: stock items, `GtkMenu`→`GtkPopover`, dialog APIs, `gimp_ui_init` | ✅ c53e7b7 |
+| 10 | `src/bimp-manipulations-gui.c` | GTK4: stock items, `gtk_vbox_new` removed | ✅ 9ca4660 |
+| 11 | `src/manipulation-gui/*.c` (8 files) | GTK4: `GtkRadioButton`→`GtkCheckButton`, color buttons, deprecated widgets; `GimpParamDef`/`GimpParam`→`GParamSpec*`/`GimpValueArray` in gui-userdef | ✅ 9ca4660 |
+| 12 | `src/bimp-serialize.c` | `GdkColor`→`GdkRGBA`; `parse_color_compat()` for backward compat; `write/read_userdef` rewritten for `GimpValueArray` | ✅ b69ceba |
+| 13 | `Makefile` | `gimptool-2.0` → `gimptool-3.0`; drop `-DGIMP_DISABLE_DEPRECATED` | ✅ b69ceba |
+
+## Phase 2 — Post-Port Refactor (Pending)
+
+Files exceeding the 300-line limit that must be split into sub-modules:
+
+| File | Lines | Split Plan |
 |---|---|---|
-| 1 | `PROJECT-PLAN.md`, `AGENTS.md` | Docs setup |
-| 2 | `src/bimp.h` | Remove `GimpParam` reference from `manip_userdef_set` |
-| 3 | `src/bimp-operate.h` | `gint32` → `GimpImage*`/`GList*` in `image_output` struct |
-| 4 | `src/bimp-manipulations.h` | `GdkColor` → `GdkRGBA`, `GimpParam*` → `GimpValueArray*` |
-| 5 | `src/bimp-utils.h` / `bimp-utils.c` | Remove `GimpParamDef`, fix `GdkWindow` reference |
-| 6 | `src/bimp.c` | Full rewrite: GObject plugin class, new query/run pattern |
-| 7 | `src/bimp-operate.c` | ID→object types, `GValueArray`, save procedure names |
-| 8 | `src/bimp-manipulations.c` | `GdkColor`→`GdkRGBA`, `GimpRGB`→`GeglColor` |
-| 9 | `src/bimp-gui.c` | GTK4: stock items, dialog APIs, `gimp_ui_init` |
-| 10 | `src/bimp-manipulations-gui.c` | GTK4: stock items, `gtk_vbox_new` removed |
-| 11 | `src/manipulation-gui/*.c` | GTK4: color buttons, stock items, deprecated widgets |
-| 12 | `src/bimp-serialize.c` | Check for any type-dependent serialization changes |
-| 13 | `Makefile` | Switch to `gimptool-3.0` |
-| 14 | Post-port: refactor | Split files exceeding 300 lines into modules |
+| `src/bimp-gui.c` | ~680 | Extract file-list panel, manipulation-list panel, preview logic |
+| `src/bimp-operate.c` | ~500+ | Extract per-manipulation apply functions into `bimp-operate-*.c` |
+| `src/manipulation-gui/gui-changeformat.c` | ~430 | Extract per-format panel builders |
+| `src/manipulation-gui/gui-userdef.c` | ~380 | Extract procedure-list and param-widget builders |
+
+Each split must keep all functions ≤ 50 lines, files ≤ 300 lines, and no commented-out code.
 
 ## Definition of Done
 
-- All source files compile without errors against GIMP 3.x headers
-- Plugin loads in GIMP 3.x and appears in File menu
-- Batch operations (resize, crop, flip, color, watermark, format change) run to completion
-- All committed code is on `feature/gimp3-port` branch
-- `AGENTS.md` and this plan are up to date
+### Phase 1 (Port) — COMPLETE
+- [x] All source files ported to GIMP 3.x libgimp API and GTK4
+- [x] All 8 commits on `feature/gimp3-port` branch, one logical unit per commit
+- [x] Build system updated to `gimptool-3.0`
+- [x] No `GdkColor`, `GimpParam`, `GimpParamDef`, `GtkMenu`, `GTK_STOCK_*`, or `gtk_vbox/hbox_new` remaining
+
+### Phase 2 (Refactor) — PENDING
+- [ ] All files ≤ 300 lines
+- [ ] All functions ≤ 50 lines
+- [ ] No comments except single-line non-obvious WHY notes
+- [ ] Plugin loads in GIMP 3.x and appears in File menu
+- [ ] Batch operations (resize, crop, flip, color, watermark, format change) run to completion
